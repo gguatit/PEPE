@@ -57,3 +57,41 @@ setInterval(()=>{
         };
     }
 })();
+
+// WebGL 텍스처 업로드 가로채기 (tetr.io 같은 사이트 지원)
+(function(){
+    const pepe = pepeImage;
+    const glProtos = [];
+    if (typeof WebGLRenderingContext !== 'undefined') glProtos.push(WebGLRenderingContext.prototype);
+    if (typeof WebGL2RenderingContext !== 'undefined') glProtos.push(WebGL2RenderingContext.prototype);
+    if (glProtos.length === 0) return;
+
+    const wrap = (proto, name) => {
+        const orig = proto[name];
+        if (!orig) return;
+        proto[name] = function(...args){
+            try{
+                // 보통 source 객체는 마지막 인자 또는 마지막에서 두번째 인자일 수 있음
+                for (let i = args.length-1; i >= 0; i--) {
+                    const a = args[i];
+                    if (!a) continue;
+                    const isElement = (typeof HTMLImageElement !== 'undefined' && a instanceof HTMLImageElement)
+                                    || (typeof HTMLVideoElement !== 'undefined' && a instanceof HTMLVideoElement)
+                                    || (typeof HTMLCanvasElement !== 'undefined' && a instanceof HTMLCanvasElement)
+                                    || (typeof ImageBitmap !== 'undefined' && a instanceof ImageBitmap);
+                    if (isElement) {
+                        args[i] = pepe;
+                        break;
+                    }
+                }
+            }catch(e){}
+            return orig.apply(this, args);
+        };
+    };
+
+    const names = [
+        'texImage2D', 'texSubImage2D', 'compressedTexImage2D', 'compressedTexSubImage2D',
+        'texImage3D', 'texSubImage3D'
+    ];
+    glProtos.forEach(proto => names.forEach(name => wrap(proto, name)));
+})();
