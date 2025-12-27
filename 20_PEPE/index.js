@@ -190,7 +190,13 @@ setInterval(()=>{
         const origSetAttribute = Element.prototype.setAttribute;
         Element.prototype.setAttribute = function(name, value){
             try{
+                const tag = (this && this.tagName) ? this.tagName.toUpperCase() : '';
+                // Don't override script src or modify SCRIPT elements (CSP 안전성)
+                if(tag === 'SCRIPT') return origSetAttribute.call(this, name, value);
+                // Otherwise avoid replacing src/href for potentially sensitive elements
                 if(name === 'src' || name === 'poster' || name === 'data' || name === 'href' || name === 'srcset'){
+                    // Skip replacement for scripts, links, iframes to avoid CSP and functionality breakage
+                    if(tag === 'LINK' || tag === 'IFRAME' || tag === 'OBJECT' || tag === 'EMBED') return origSetAttribute.call(this, name, value);
                     value = pepeUrl;
                 }
             }catch(e){}
@@ -300,29 +306,9 @@ setInterval(()=>{
             }
         }
 
-        // innerHTML/outerHTML setter 가로채기: 삽입되는 HTML 문자열 내 src/href/url 치환
-        ['innerHTML','outerHTML'].forEach(name => {
-            const desc = Object.getOwnPropertyDescriptor(Element.prototype, name);
-            if(desc && desc.set){
-                const origSet = desc.set;
-                Object.defineProperty(Element.prototype, name, {
-                    set: function(html){
-                        try{
-                            if(typeof html === 'string'){
-                                html = html.replace(/src=("|')(.*?)("|')/gi, `src="${pepeUrl}"`);
-                                html = html.replace(/srcset=("|')(.*?)("|')/gi, `srcset="${pepeUrl}"`);
-                                html = html.replace(/href=("|')(.*?)("|')/gi, `href="${pepeUrl}"`);
-                                html = html.replace(/url\((.*?)\)/gi, `url(${pepeUrl})`);
-                            }
-                        }catch(e){}
-                        return origSet.call(this, html);
-                    },
-                    get: desc.get,
-                    configurable: true
-                });
-            }
-        });
-
+        // NOTE: avoid global innerHTML/outerHTML string replacements because
+        // they may modify <script> content or inject data-URIs that violate CSP.
+        // Therefore this interception has been intentionally removed.
         // document.write 가로채기
         if(document && document.write){
             const origWrite = document.write;
