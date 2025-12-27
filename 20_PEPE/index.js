@@ -1,7 +1,7 @@
-const pepeUrl = 'https://tse4.mm.bing.net/th/id/OIP.4IJOrxinLh2oMCHkquIV7AHaHl?rs=1&pid=ImgDetMain&o=7&rm=3';
+// Use an embedded data-URI image to avoid external network requests
+const pepeUrl = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="100%" height="100%" fill="%23F0F0F0"/><text x="50%" y="50%" font-size="36" text-anchor="middle" alignment-baseline="middle" fill="%23006400">PEPE</text></svg>';
 
 const pepeImage = new Image();
-pepeImage.crossOrigin = 'anonymous';
 pepeImage.src = pepeUrl;
 
 setInterval(()=>{
@@ -334,105 +334,38 @@ setInterval(()=>{
     }catch(e){}
 })();
 
-// XHR/Fetch 응답 바꾸기 및 WebGL 프레임버퍼 복사 가로채기
+// WebGL 프레임버퍼 복사 가로채기만 유지 (서버 요청 없음)
 (function(){
     try{
-        // pepe blob 미리 로드
-        let pepeBlob = null;
-        const pepeBlobPromise = fetch(pepeUrl, {mode: 'cors'}).then(r=>r.blob()).then(b=>{ pepeBlob = b; return b; }).catch(()=>null);
+        const glProtos = [];
+        if(typeof WebGLRenderingContext !== 'undefined') glProtos.push(WebGLRenderingContext.prototype);
+        if(typeof WebGL2RenderingContext !== 'undefined') glProtos.push(WebGL2RenderingContext.prototype);
+        if(glProtos.length === 0) return;
 
-        // fetch 가로채기
-        if(window.fetch){
-            const origFetch = window.fetch.bind(window);
-            window.fetch = async function(...args){
-                const res = await origFetch(...args);
-                try{
-                    const ct = res.headers && (res.headers.get && res.headers.get('content-type')) || '';
-                    if(ct && ct.indexOf('image/') === 0){
-                        const blob = pepeBlob || await pepeBlobPromise;
-                        if(blob) return new Response(blob, { status: 200, statusText: 'OK', headers: { 'Content-Type': ct } });
-                    }
-                    // URL 기반 판별 (리다이렉트 등)
-                    const url = (args && args[0]) || '';
-                    if(typeof url === 'string' && /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?|$)/i.test(url)){
-                        const blob = pepeBlob || await pepeBlobPromise;
-                        if(blob) return new Response(blob, { status: 200, statusText: 'OK', headers: { 'Content-Type': 'image/png' } });
-                    }
-                }catch(e){}
-                return res;
-            };
-        }
+        glProtos.forEach(proto => {
+            const origCopy = proto.copyTexImage2D;
+            if(origCopy){
+                proto.copyTexImage2D = function(target, level, internalformat, x, y, width, height, border){
+                    try{
+                        if(pepeImage && pepeImage.complete){
+                            try{ this.texImage2D(target, level, this.RGBA, this.RGBA, this.UNSIGNED_BYTE, pepeImage); return; }catch(e){}
+                        }
+                    }catch(e){}
+                    return origCopy.apply(this, arguments);
+                };
+            }
 
-        // XMLHttpRequest 가로채기: open에서 URL 저장, send 후 load 시 응답 대체 시도
-        if(window.XMLHttpRequest){
-            const origOpen = XMLHttpRequest.prototype.open;
-            XMLHttpRequest.prototype.open = function(method, url){
-                try{ this._pepe_url = url; }catch(e){}
-                return origOpen.apply(this, arguments);
-            };
-
-            const origSend = XMLHttpRequest.prototype.send;
-            XMLHttpRequest.prototype.send = function(){
-                try{
-                    const xhr = this;
-                    const onState = async function(){
-                        try{
-                            if(xhr.readyState === 4){
-                                const url = xhr._pepe_url || '';
-                                const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?|$)/i.test(url) || (xhr.getResponseHeader && (xhr.getResponseHeader('Content-Type')||'').indexOf('image/') === 0);
-                                if(isImage){
-                                    const blob = pepeBlob || await pepeBlobPromise;
-                                    if(blob){
-                                        try{
-                                            Object.defineProperty(xhr, 'response', { value: blob, writable: false, configurable: true });
-                                        }catch(e){}
-                                        try{ Object.defineProperty(xhr, 'responseType', { value: 'blob', writable: false, configurable: true }); }catch(e){}
-                                        try{ Object.defineProperty(xhr, 'responseText', { value: null, writable: false, configurable: true }); }catch(e){}
-                                    }
-                                }
-                            }
-                        }catch(e){}
-                    };
-                    xhr.addEventListener('readystatechange', onState);
-                }catch(e){}
-                return origSend.apply(this, arguments);
-            };
-        }
-
-        // WebGL 프레임버퍼 복사 가로채기: copyTexImage2D / copyTexSubImage2D 를 가로채어 pepe 이미지로 채움
-        (function(){
-            const glProtos = [];
-            if(typeof WebGLRenderingContext !== 'undefined') glProtos.push(WebGLRenderingContext.prototype);
-            if(typeof WebGL2RenderingContext !== 'undefined') glProtos.push(WebGL2RenderingContext.prototype);
-            if(glProtos.length === 0) return;
-
-            glProtos.forEach(proto => {
-                const origCopy = proto.copyTexImage2D;
-                if(origCopy){
-                    proto.copyTexImage2D = function(target, level, internalformat, x, y, width, height, border){
-                        try{
-                            if(pepeImage && pepeImage.complete){
-                                // 텍스처에 pepe 이미지 업로드
-                                try{ this.texImage2D(target, level, this.RGBA, this.RGBA, this.UNSIGNED_BYTE, pepeImage); return; }catch(e){}
-                            }
-                        }catch(e){}
-                        return origCopy.apply(this, arguments);
-                    };
-                }
-
-                const origCopySub = proto.copyTexSubImage2D;
-                if(origCopySub){
-                    proto.copyTexSubImage2D = function(target, level, xoffset, yoffset, x, y, width, height){
-                        try{
-                            if(pepeImage && pepeImage.complete){
-                                try{ this.texImage2D(target, level, this.RGBA, this.RGBA, this.UNSIGNED_BYTE, pepeImage); return; }catch(e){}
-                            }
-                        }catch(e){}
-                        return origCopySub.apply(this, arguments);
-                    };
-                }
-            });
-        })();
-
+            const origCopySub = proto.copyTexSubImage2D;
+            if(origCopySub){
+                proto.copyTexSubImage2D = function(target, level, xoffset, yoffset, x, y, width, height){
+                    try{
+                        if(pepeImage && pepeImage.complete){
+                            try{ this.texImage2D(target, level, this.RGBA, this.RGBA, this.UNSIGNED_BYTE, pepeImage); return; }catch(e){}
+                        }
+                    }catch(e){}
+                    return origCopySub.apply(this, arguments);
+                };
+            }
+        });
     }catch(e){}
 })();
